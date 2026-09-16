@@ -3,12 +3,475 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Assignment</title>
+
+    <title>Escape Room</title>
+
+    <!-- A-Frame -->
+    <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        #ui {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 10;
+            color: white;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 15px;
+            border-radius: 10px;
+            width: 280px;
+        }
+
+        #message {
+            margin-top: 10px;
+            color: #ffd966;
+        }
+
+        #winScreen {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            text-align: center;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+
+        #winScreen h1 {
+            font-size: 50px;
+            color: #4cff4c;
+        }
+
+        #winScreen button {
+            font-size: 20px;
+            padding: 12px 25px;
+            cursor: pointer;
+        }
+    </style>
 </head>
+
 <body>
 
-    <h1>My Website</h1>
-    <p>This is my first webpage.</p>
+    <!-- UI -->
+    <div id="ui">
+        <strong>ESCAPE ROOM</strong>
+        <br><br>
+
+        Find the clues and escape the room.
+
+        <div id="message">
+            Click objects to interact with them.
+        </div>
+    </div>
+
+    <!-- WIN SCREEN -->
+    <div id="winScreen">
+        <h1>YOU ESCAPED!</h1>
+        <p>You solved the escape room.</p>
+        <button onclick="location.reload()">Play Again</button>
+    </div>
+
+    <a-scene>
+
+        <!-- ========================= -->
+        <!-- LIGHTING -->
+        <!-- ========================= -->
+
+        <a-entity light="type: ambient; intensity: 0.5"></a-entity>
+
+        <a-entity
+            light="type: point; intensity: 1.5; distance: 20"
+            position="0 3 0">
+        </a-entity>
+
+
+        <!-- ========================= -->
+        <!-- ROOM -->
+        <!-- ========================= -->
+
+        <!-- Floor -->
+        <a-plane
+            position="0 0 0"
+            rotation="-90 0 0"
+            width="10"
+            height="10"
+            color="#555">
+        </a-plane>
+
+        <!-- Back wall -->
+        <a-box
+            position="0 2.5 -5"
+            width="10"
+            height="5"
+            depth="0.2"
+            color="#333">
+        </a-box>
+
+        <!-- Left wall -->
+        <a-box
+            position="-5 2.5 0"
+            width="0.2"
+            height="5"
+            depth="10"
+            color="#333">
+        </a-box>
+
+        <!-- Right wall -->
+        <a-box
+            position="5 2.5 0"
+            width="0.2"
+            height="5"
+            depth="10"
+            color="#333">
+        </a-box>
+
+        <!-- Front wall -->
+        <a-box
+            position="0 2.5 5"
+            width="10"
+            height="5"
+            depth="0.2"
+            color="#333">
+        </a-box>
+
+
+        <!-- ========================= -->
+        <!-- TABLE -->
+        <!-- ========================= -->
+
+        <a-box
+            position="0 1 -2"
+            width="4"
+            height="0.2"
+            depth="1.5"
+            color="#6b4226">
+        </a-box>
+
+        <!-- Table legs -->
+        <a-box position="-1.7 0.5 -2" width="0.2" height="1" depth="0.2" color="#4a2d1a"></a-box>
+        <a-box position="1.7 0.5 -2" width="0.2" height="1" depth="0.2" color="#4a2d1a"></a-box>
+        <a-box position="-1.7 0.5 -1" width="0.2" height="1" depth="0.2" color="#4a2d1a"></a-box>
+        <a-box position="1.7 0.5 -1" width="0.2" height="1" depth="0.2" color="#4a2d1a"></a-box>
+
+
+        <!-- ========================= -->
+        <!-- CLUE 1 - BOOK -->
+        <!-- ========================= -->
+
+        <a-box
+            id="book"
+            position="-1 1.25 -2"
+            width="0.8"
+            height="0.12"
+            depth="1"
+            color="#8b0000"
+            class="clickable">
+        </a-box>
+
+
+        <!-- ========================= -->
+        <!-- CLUE 2 - PAINTING -->
+        <!-- ========================= -->
+
+        <a-box
+            id="painting"
+            position="2.5 2.5 -4.85"
+            width="1.8"
+            height="1.5"
+            depth="0.1"
+            color="#d9b44a"
+            class="clickable">
+        </a-box>
+
+        <!-- Painting inside -->
+        <a-box
+            position="2.5 2.5 -4.78"
+            width="1.3"
+            height="1"
+            depth="0.05"
+            color="#222">
+        </a-box>
+
+
+        <!-- ========================= -->
+        <!-- CHEST -->
+        <!-- ========================= -->
+
+        <a-box
+            position="-2.5 0.6 -3.5"
+            width="1.5"
+            height="1.2"
+            depth="1"
+            color="#8a5a2b">
+        </a-box>
+
+        <!-- Chest lock -->
+        <a-box
+            id="chestLock"
+            position="-2.5 0.8 -2.98"
+            width="0.25"
+            height="0.35"
+            depth="0.1"
+            color="#333"
+            class="clickable">
+        </a-box>
+
+
+        <!-- ========================= -->
+        <!-- KEYPAD -->
+        <!-- ========================= -->
+
+        <a-box
+            position="2.5 1.7 -4.85"
+            width="1.4"
+            height="1.7"
+            depth="0.15"
+            color="#111">
+        </a-box>
+
+        <!-- Keypad buttons -->
+
+        <a-box id="button1" position="2.15 2.15 -4.75" width="0.25" height="0.25" depth="0.1" color="#777" class="clickable"></a-box>
+        <a-box id="button2" position="2.5 2.15 -4.75" width="0.25" height="0.25" depth="0.1" color="#777" class="clickable"></a-box>
+        <a-box id="button3" position="2.85 2.15 -4.75" width="0.25" height="0.25" depth="0.1" color="#777" class="clickable"></a-box>
+
+        <a-box id="button4" position="2.15 1.8 -4.75" width="0.25" height="0.25" depth="0.1" color="#777" class="clickable"></a-box>
+        <a-box id="button5" position="2.5 1.8 -4.75" width="0.25" height="0.25" depth="0.1" color="#777" class="clickable"></a-box>
+        <a-box id="button6" position="2.85 1.8 -4.75" width="0.25" height="0.25" depth="0.1" color="#777" class="clickable"></a-box>
+
+        <a-box id="button7" position="2.15 1.45 -4.75" width="0.25" height="0.25" depth="0.1" color="#777" class="clickable"></a-box>
+        <a-box id="button8" position="2.5 1.45 -4.75" width="0.25" height="0.25" depth="0.1" color="#777" class="clickable"></a-box>
+        <a-box id="button9" position="2.85 1.45 -4.75" width="0.25" height="0.25" depth="0.1" color="#777" class="clickable"></a-box>
+
+
+        <!-- ========================= -->
+        <!-- EXIT DOOR -->
+        <!-- ========================= -->
+
+        <a-box
+            id="door"
+            position="0 2.2 4.85"
+            width="2.2"
+            height="4.4"
+            depth="0.2"
+            color="#222">
+        </a-box>
+
+        <!-- Door handle -->
+        <a-sphere
+            position="0.7 2.2 4.7"
+            radius="0.12"
+            color="#ffd700">
+        </a-sphere>
+
+
+        <!-- ========================= -->
+        <!-- TEXT -->
+        <!-- ========================= -->
+
+        <a-text
+            value="ESCAPE"
+            position="-1 4.1 4.6"
+            rotation="0 180 0"
+            width="4"
+            color="#ff4444">
+        </a-text>
+
+        <!-- ========================= -->
+        <!-- CAMERA -->
+        <!-- ========================= -->
+
+        <a-entity
+            id="cameraRig"
+            position="0 1.6 3.5">
+
+            <a-camera>
+                <a-cursor
+                    color="yellow"
+                    fuse="false">
+                </a-cursor>
+            </a-camera>
+
+        </a-entity>
+
+    </a-scene>
+
+
+    <script>
+
+        // ==================================
+        // GAME VARIABLES
+        // ==================================
+
+        let foundBook = false;
+        let foundPainting = false;
+        let foundChest = false;
+
+        let code = "";
+        let correctCode = "357";
+
+        const message = document.getElementById("message");
+
+
+        // ==================================
+        // MESSAGE FUNCTION
+        // ==================================
+
+        function showMessage(text) {
+            message.innerHTML = text;
+        }
+
+
+        // ==================================
+        // BOOK
+        // ==================================
+
+        document.getElementById("book").addEventListener("click", function () {
+
+            foundBook = true;
+
+            showMessage(
+                "You found a strange book. Inside it says:<br><br>" +
+                "<strong>The first number is 3.</strong>"
+            );
+
+        });
+
+
+        // ==================================
+        // PAINTING
+        // ==================================
+
+        document.getElementById("painting").addEventListener("click", function () {
+
+            foundPainting = true;
+
+            showMessage(
+                "You inspect the painting and find writing behind it:<br><br>" +
+                "<strong>The second number is 5.</strong>"
+            );
+
+        });
+
+
+        // ==================================
+        // CHEST
+        // ==================================
+
+        document.getElementById("chestLock").addEventListener("click", function () {
+
+            if (!foundBook) {
+
+                showMessage(
+                    "The chest is locked. Maybe there is a clue somewhere."
+                );
+
+                return;
+            }
+
+            foundChest = true;
+
+            showMessage(
+                "You open the chest and discover a note:<br><br>" +
+                "<strong>The final number is 7.</strong><br><br>" +
+                "You now know the code."
+            );
+
+        });
+
+
+        // ==================================
+        // KEYPAD
+        // ==================================
+
+        const buttons = {
+
+            button1: "1",
+            button2: "2",
+            button3: "3",
+
+            button4: "4",
+            button5: "5",
+            button6: "6",
+
+            button7: "7",
+            button8: "8",
+            button9: "9"
+
+        };
+
+
+        Object.keys(buttons).forEach(function (id) {
+
+            document.getElementById(id).addEventListener("click", function () {
+
+                code += buttons[id];
+
+                showMessage(
+                    "Keypad: <strong>" + code + "</strong>"
+                );
+
+
+                // Check code
+                if (code.length === 3) {
+
+                    if (code === correctCode) {
+
+                        showMessage(
+                            "<strong>Correct code!</strong><br>" +
+                            "The door is unlocked."
+                        );
+
+                        unlockDoor();
+
+                    } else {
+
+                        showMessage(
+                            "<strong>Wrong code.</strong><br>" +
+                            "Try again."
+                        );
+
+                        code = "";
+
+                    }
+
+                }
+
+            });
+
+        });
+
+
+        // ==================================
+        // UNLOCK DOOR
+        // ==================================
+
+        function unlockDoor() {
+
+            const door = document.getElementById("door");
+
+            door.setAttribute(
+                "animation",
+                "property: position; to: 0 2.2 6; dur: 1500; easing: easeInOutQuad"
+            );
+
+            setTimeout(function () {
+
+                document.getElementById("winScreen").style.display = "flex";
+
+            }, 1600);
+
+        }
+
+    </script>
 
 </body>
 </html>
