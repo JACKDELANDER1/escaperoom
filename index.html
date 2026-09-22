@@ -1,227 +1,37 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>A321 Cockpit Escape</title>
-<style>
-:root{--bg:#0b0e11;--pan:#1a2026;--pan2:#11161b;--line:#2d3841;--txt:#e2e9ef;--dim:#83919d;--grn:#3ddc84;--amb:#ffb020;--blu:#4ab3ff;--red:#ff4d4d;--mono:ui-monospace,Menlo,Consolas,monospace}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% 0,#1c252d,var(--bg) 65%);color:var(--txt);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-header{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;justify-content:space-between;padding:.8rem 1rem;border-bottom:1px solid var(--line)}
-h1{font-size:1rem;letter-spacing:.16em;margin:0;font-weight:600}
-h1 span{color:var(--blu)}
-.tools{display:flex;gap:.5rem;align-items:center}
-#time{font:600 1rem var(--mono);color:var(--grn);min-width:3.5rem}
-button{font:inherit;color:inherit;cursor:pointer}
-button:focus-visible{outline:2px solid var(--blu);outline-offset:2px}
-.btn{background:var(--pan);border:1px solid var(--line);border-radius:6px;padding:.4rem .8rem}
-.btn:hover{border-color:var(--blu)}
-main{display:grid;gap:.9rem;padding:1rem;max-width:1150px;margin:auto;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
-section{background:linear-gradient(var(--pan),var(--pan2));border:1px solid var(--line);border-radius:10px;padding:.8rem .9rem}
-h2{margin:0 0 .6rem;font-size:.72rem;letter-spacing:.18em;color:var(--dim);font-weight:600}
-.row{display:flex;flex-wrap:wrap;gap:.5rem}
-.grp{border:1px solid var(--line);border-radius:6px;padding:.4rem .5rem .5rem;flex:1 1 auto}
-.grp>b{display:block;font-size:.62rem;letter-spacing:.14em;color:var(--dim);margin-bottom:.35rem;font-weight:600}
-.sws{display:flex;gap:.4rem;flex-wrap:wrap}
-.sw{min-width:62px;background:#0d1216;border:1px solid var(--line);border-radius:6px;padding:.35rem .5rem;text-align:center;font-size:.72rem;letter-spacing:.05em}
-.sw small{display:block;font-size:.62rem;color:var(--dim);min-height:.9em}
-.sw::before{content:"";display:block;height:3px;border-radius:2px;background:#2a343c;margin-bottom:.3rem}
-.sw.on::before{background:var(--grn);box-shadow:0 0 8px var(--grn)}
-.sw.on small{color:var(--grn)}
-.sw.amb.on::before{background:var(--amb);box-shadow:0 0 8px var(--amb)}
-.sw.amb.on small{color:var(--amb)}
-.sw:active,.k:active{transform:translateY(1px)}
-#ecam{background:#050708;border:2px solid #2a343c;border-radius:8px;padding:.7rem;font:12px/1.5 var(--mono);min-height:230px;display:grid;grid-template-columns:1.3fr 1fr;gap:.8rem}
-#ecam>*{transition:opacity .6s}
-#ecam.off>*{opacity:0}
-#msgs div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.g{color:var(--grn)}.a{color:var(--amb)}.w{color:#fff}.b{color:var(--blu)}
-.gauge{margin-bottom:.5rem}
-.bar{height:8px;background:#161d22;border-radius:4px;overflow:hidden;margin-top:2px}
-.bar i{display:block;height:100%;width:0;background:var(--grn);transition:width .15s}
-#alb{background:var(--blu)}
-.xp{font:600 1.1rem var(--mono);letter-spacing:.2em;text-align:center;background:#050708;border:1px solid var(--line);border-radius:5px;padding:.3rem;margin-bottom:.4rem;color:var(--grn)}
-#keys{display:grid;grid-template-columns:repeat(5,1fr);gap:.3rem}
-.k{background:#0d1216;border:1px solid var(--line);border-radius:5px;padding:.4rem 0;font:600 .75rem var(--mono)}
-#to{width:100%;margin-top:.7rem;padding:.7rem;border-color:var(--blu);color:var(--blu);font-weight:600;letter-spacing:.1em}
-#doorwrap{position:relative;height:200px;border:2px solid #2a343c;border-radius:6px;overflow:hidden;background:#000;perspective:700px;margin-bottom:.7rem}
-#cabin{position:absolute;inset:0;background:linear-gradient(90deg,#f5deb3,#c8a76a);opacity:.15;transition:opacity 1s}
-#door{position:absolute;inset:0;background:linear-gradient(#39434c,#2a333a);transform-origin:left center;transition:transform 1.4s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem;border-right:3px solid #1b2228;font-size:.75rem;letter-spacing:.12em}
-#led{width:14px;height:14px;border-radius:50%;background:var(--red);box-shadow:0 0 12px var(--red);transition:.4s}
-#doorwrap.open #cabin{opacity:1}
-#doorwrap.open #door{transform:rotateY(-75deg)}
-#doorwrap.open #led{background:var(--grn);box-shadow:0 0 12px var(--grn)}
-.modal{position:fixed;inset:0;background:#000c;display:none;place-items:center;padding:1rem;z-index:9}
-.modal.show{display:grid}
-.box{background:var(--pan);border:1px solid var(--line);border-radius:12px;padding:1.4rem;max-width:390px;text-align:center}
-.box h3{margin:0 0 .6rem;font-size:1.1rem}
-.box p{margin:.4rem 0 1rem;color:#c3ced8}
-.big{font:600 1.1rem var(--mono);color:var(--amb)!important}
-#toast{position:fixed;left:50%;bottom:1.2rem;transform:translate(-50%,20px);background:#10161bf2;border:1px solid var(--blu);padding:.6rem 1rem;border-radius:8px;opacity:0;pointer-events:none;transition:.3s;max-width:92vw;text-align:center;z-index:20}
-#toast.show{opacity:1;transform:translate(-50%,0)}
-@media(prefers-reduced-motion:reduce){*{transition:none!important}}
-</style>
-</head>
-<body>
-<header>
-  <h1>A321 <span>COCKPIT ESCAPE</span></h1>
-  <div class="tools"><span id="time">00:00</span><button class="btn" id="hint">Hint</button><button class="btn" id="restart">Restart</button></div>
-</header>
-<main>
-  <section>
-    <h2>E/WD DISPLAY</h2>
-    <div id="ecam" class="off">
-      <div id="msgs"></div>
-      <div>
-        <div class="gauge">N1 ENG 1 <span id="n1t0" class="g">0</span>%<div class="bar"><i id="n1b0"></i></div></div>
-        <div class="gauge">N1 ENG 2 <span id="n1t1" class="g">0</span>%<div class="bar"><i id="n1b1"></i></div></div>
-        <div class="gauge">ADIRS <span id="alt" class="b">-</span><div class="bar"><i id="alb"></i></div></div>
-        <div id="stat"></div>
-      </div>
-    </div>
-  </section>
+# Bonnie Blue's Mansion Escape (VR)
 
-  <section>
-    <h2>OVERHEAD PANEL</h2>
-    <div class="row">
-      <div class="grp"><b>ELEC</b><div class="sws">
-        <button class="sw" id="bat1" data-on="AUTO" data-off="OFF"><span>BAT 1</span><small></small></button>
-        <button class="sw" id="bat2" data-on="AUTO" data-off="OFF"><span>BAT 2</span><small></small></button></div></div>
-      <div class="grp"><b>APU</b><div class="sws">
-        <button class="sw" id="apuM" data-on="ON" data-off="OFF"><span>MASTER</span><small></small></button>
-        <button class="sw amb" id="apuS" data-on="ON" data-off="OFF"><span>START</span><small></small></button></div></div>
-      <div class="grp"><b>ADIRS</b><div class="sws">
-        <button class="sw" id="ir0" data-on="NAV" data-off="OFF"><span>IR 1</span><small></small></button>
-        <button class="sw" id="ir1" data-on="NAV" data-off="OFF"><span>IR 2</span><small></small></button>
-        <button class="sw" id="ir2" data-on="NAV" data-off="OFF"><span>IR 3</span><small></small></button></div></div>
-      <div class="grp"><b>EXT LT</b><div class="sws">
-        <button class="sw" id="beacon" data-on="ON" data-off="OFF"><span>BEACON</span><small></small></button></div></div>
-    </div>
-  </section>
+A short first-person VR horror escape game made in Unity.
 
-  <section>
-    <h2>PEDESTAL</h2>
-    <div class="row">
-      <div class="grp"><b>ENG</b><div class="sws">
-        <button class="sw amb" id="mode" data-on="IGN/START" data-off="NORM"><span>MODE</span><small></small></button>
-        <button class="sw amb" id="e0" data-on="ON" data-off="OFF"><span>MASTER 1</span><small></small></button>
-        <button class="sw amb" id="e1" data-on="ON" data-off="OFF"><span>MASTER 2</span><small></small></button></div></div>
-      <div class="grp"><b>FLAPS</b><div class="sws">
-        <button class="sw" data-f="0"><span>0</span></button><button class="sw" data-f="1"><span>1</span></button><button class="sw" data-f="2"><span>2</span></button><button class="sw" data-f="3"><span>3</span></button><button class="sw" data-f="4"><span>FULL</span></button></div></div>
-      <div class="grp"><b>XPDR</b><div class="xp" id="xp"></div><div id="keys"></div></div>
-    </div>
-    <button class="btn" id="to">T.O. CONFIG</button>
-  </section>
+## Goal
+You wake up inside Bonnie Blue's mansion. Collect **3 keys** and reach the front door while being hunted by aggressive male AI enemies.
 
-  <section>
-    <h2>COCKPIT DOOR</h2>
-    <div id="doorwrap"><div id="cabin"></div><div id="door"><div id="led"></div><span id="dlabel">LOCKED</span></div></div>
-    <button class="btn" id="card">Read takeoff card</button>
-  </section>
-</main>
+## Features
+- Full VR movement (XR Interaction Toolkit)
+- NavMesh AI hunters that chase and attack on sight
+- Key collection system
+- Win / Lose conditions
+- Everything in a **single C# file** for easy setup
 
-<div class="modal show" id="intro"><div class="box"><h3>You're locked in.</h3><p>The cockpit door only unlocks when the A321 is ready for takeoff. The aircraft is cold and dark. Power it up, configure it, and get out. Stuck? Press Hint.</p><button class="btn" id="start">Start</button></div></div>
-<div class="modal" id="cardm"><div class="box"><h3>Takeoff data card</h3><p>Flight 321, runway 27</p><p class="big">FLAPS <span id="cf"></span> &nbsp; SQUAWK <span id="cs"></span></p><button class="btn" id="cclose">Close</button></div></div>
-<div class="modal" id="win"><div class="box"><h3>You escaped!</h3><p>The door swings open and you step out. Your time: <b id="winTime"></b></p><button class="btn" id="again">Play again</button></div></div>
-<div id="toast"></div>
+## Requirements
+- Unity 2022.3 LTS or newer
+- XR Interaction Toolkit
+- Any OpenXR headset (Meta Quest, Valve Index, etc.)
 
-<script>
-const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
-const rnd=n=>Math.floor(Math.random()*n);
-const fmt=s=>String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
-let S,t0,tm,tt;
+## Quick Setup
+1. Create a new Unity 3D (URP) project
+2. Install **XR Interaction Toolkit** via Package Manager
+3. Create an empty GameObject → add the `BonnieBlueMansionEscape` component
+4. Set up XR Origin as the Player (add `VRPlayerController` + `PlayerHealth` + CharacterController + tag it **"Player"**)
+5. Create hunters → add `NavMeshAgent` + `HunterAI`
+6. Create keys → add XR Grab Interactable and link the Select Entered event to `KeyPickup.OnSelectEntered`
+7. Create the exit door → add `ExitDoor` component
+8. Bake a NavMesh on the floor
+9. Assign the Exit Door and UI screens in the GameManager
 
-function init(){
-  clearInterval(tm);t0=0;
-  S={bat1:0,bat2:0,apuM:0,apuS:0,apuA:0,apuT:0,ir:[0,0,0],al:0,ok:0,beacon:0,sq:'',sqOk:0,flaps:0,mode:0,eng:[0,0],run:[0,0],n1:[0,0],done:0,log:[],
-     code:Array.from({length:4},()=>rnd(8)).join(''),tgt:1+rnd(3)};
-  $('#time').textContent='00:00';$('#doorwrap').classList.remove('open');$('#dlabel').textContent='LOCKED';
-  ['win','cardm'].forEach(i=>$('#'+i).classList.remove('show'));
-  drawMsgs();render();
-}
-function msg(t,c='w'){S.log.push([t,c]);if(S.log.length>7)S.log.shift();drawMsgs()}
-function drawMsgs(){$('#msgs').innerHTML=S.log.map(([t,c])=>`<div class="${c}">${t}</div>`).join('')}
-function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('show'),3500)}
-function go(){if(!t0){t0=Date.now();tm=setInterval(()=>{if(!S.done)$('#time').textContent=fmt(Math.floor((Date.now()-t0)/1000))},500)}}
-const pw=()=>S.bat1&&S.bat2;
-function gate(){go();if(S.done)return 0;if(!pw()){toast('The cockpit is dark. Start with the BAT switches on the overhead panel.');return 0}return 1}
-function blackout(){Object.assign(S,{apuM:0,apuS:0,apuA:0,apuT:0,ir:[0,0,0],al:0,ok:0,beacon:0,sq:'',sqOk:0,flaps:0,mode:0,eng:[0,0],run:[0,0],n1:[0,0],log:[]});drawMsgs()}
+## Controls
+- Left stick → Move
+- Sprint button (configurable)
+- Grip / Trigger → Grab keys
 
-function render(){
-  $('#ecam').classList.toggle('off',!pw());
-  const on={bat1:S.bat1,bat2:S.bat2,apuM:S.apuM,apuS:S.apuS,ir0:S.ir[0],ir1:S.ir[1],ir2:S.ir[2],beacon:S.beacon,mode:S.mode,e0:S.eng[0],e1:S.eng[1]};
-  for(const k in on){const b=$('#'+k);b.classList.toggle('on',!!on[k]);b.querySelector('small').textContent=on[k]?b.dataset.on:b.dataset.off}
-  $$('[data-f]').forEach(b=>b.classList.toggle('on',+b.dataset.f===S.flaps));
-  for(let i=0;i<2;i++){$('#n1t'+i).textContent=S.n1[i].toFixed(1);$('#n1b'+i).style.width=S.n1[i]*4+'%'}
-  const allIr=S.ir.every(Boolean);
-  $('#alb').style.width=S.al*100+'%';
-  $('#alt').textContent=S.ok?'ALIGNED':allIr?'ALIGN '+Math.round(S.al*100)+'%':'-';
-  $('#stat').innerHTML=`APU <span class="${S.apuA?'g':S.apuS?'a':'w'}">${S.apuA?'AVAIL':S.apuS?'START':'OFF'}</span><br>FLAPS <span class="b">${['0','1','2','3','FULL'][S.flaps]}</span><br>XPDR <span class="${S.sqOk?'g':'w'}">${S.sqOk?S.code:'----'}</span>`;
-  $('#xp').textContent=(S.sqOk?S.code:(S.sq+'____').slice(0,4)).split('').join(' ');
-}
-
-setInterval(()=>{
-  if(!S||S.done)return;let ch=0;
-  if(S.apuS&&!S.apuA){S.apuT+=.1;if(S.apuT>=3){S.apuA=1;msg('APU AVAIL','g')}ch=1}
-  if(S.ir.every(Boolean)&&!S.ok){S.al+=.1/6;if(S.al>=1){S.al=1;S.ok=1;msg('ADIRS ALIGNED','g')}ch=1}
-  for(let i=0;i<2;i++){
-    const tg=S.eng[i]?20:0,v=S.n1[i];
-    if(v!==tg){S.n1[i]=v<tg?Math.min(tg,v+.7):Math.max(tg,v-1.2);ch=1;
-      if(S.eng[i]&&S.n1[i]>=20&&!S.run[i]){S.run[i]=1;msg('ENG '+(i+1)+' AT IDLE','g')}}
-  }
-  if(ch)render();
-},100);
-
-['bat1','bat2'].forEach(k=>$('#'+k).onclick=()=>{go();if(S.done)return;S[k]^=1;if(!pw())blackout();else if(S[k])msg('ELEC: '+k.toUpperCase().replace('BAT','BAT ')+' ONLINE','g');render()});
-$('#apuM').onclick=()=>{if(!gate())return;S.apuM^=1;if(!S.apuM){S.apuS=S.apuA=S.apuT=0;msg('APU SHUT DOWN','a')}else msg('APU MASTER SW ON');render()};
-$('#apuS').onclick=()=>{if(!gate())return;if(!S.apuM)msg('APU MASTER SW IS OFF','a');else if(!S.apuS){S.apuS=1;S.apuT=0;msg('APU STARTING...','a')}render()};
-[0,1,2].forEach(i=>$('#ir'+i).onclick=()=>{if(!gate())return;S.ir[i]^=1;if(!S.ir.every(Boolean)){S.al=0;S.ok=0}else msg('ADIRS ALIGNING...','a');render()});
-$('#beacon').onclick=()=>{if(!gate())return;S.beacon^=1;render()};
-
-[...'01234567','CLR','ENT'].forEach(k=>{
-  const b=document.createElement('button');b.className='k';b.textContent=k;
-  b.onclick=()=>{if(!gate())return;
-    if(k==='CLR')S.sq='';
-    else if(k==='ENT'){if(S.sq===S.code){S.sqOk=1;msg('XPDR '+S.code+' SET','g')}else{msg('XPDR CODE REJECTED','a');S.sq=''}}
-    else if(S.sq.length<4&&!S.sqOk)S.sq+=k;
-    render()};
-  $('#keys').appendChild(b);
-});
-$$('[data-f]').forEach(b=>b.onclick=()=>{if(!gate())return;S.flaps=+b.dataset.f;msg('FLAPS '+b.textContent,'b');render()});
-$('#mode').onclick=()=>{if(!gate())return;S.mode^=1;msg(S.mode?'ENG MODE SEL: IGN/START':'ENG MODE SEL: NORM');render()};
-[0,1].forEach(i=>$('#e'+i).onclick=()=>{if(!gate())return;
-  if(S.eng[i]){S.eng[i]=0;S.run[i]=0;msg('ENG '+(i+1)+' SHUT DOWN','a')}
-  else if(!S.mode)msg('SET ENG MODE SEL TO IGN/START','a');
-  else if(!S.apuA)msg('NO BLEED AIR - START APU','a');
-  else{S.eng[i]=1;msg('ENG '+(i+1)+' STARTING...','a')}
-  render()});
-
-$('#to').onclick=()=>{if(!gate())return;
-  const bad=!S.ok?'ADIRS NOT ALIGNED':!S.sqOk?'XPDR CODE NOT SET':!S.beacon?'BEACON LIGHT OFF':S.flaps!==S.tgt?'FLAPS NOT IN T.O. POSITION':!(S.run[0]&&S.run[1])?'ENG NOT AT IDLE':S.mode?'ENG MODE SEL NOT NORM':'';
-  if(bad){msg('T.O. CONFIG: '+bad,'a');render();return}
-  $('#time').textContent=fmt(Math.floor((Date.now()-t0)/1000));S.done=1;
-  msg('T.O. CONFIG NORMAL','g');msg('T.O. MEMO: NO BLUE','g');render();
-  setTimeout(()=>{$('#doorwrap').classList.add('open');$('#dlabel').textContent='UNLOCKED';msg('COCKPIT DOOR UNLOCKED','g')},1200);
-  setTimeout(()=>{$('#winTime').textContent=$('#time').textContent;$('#win').classList.add('show')},3400);
-};
-
-$('#hint').onclick=()=>{go();toast(
-  !pw()?'Overhead panel: switch BAT 1 and BAT 2 to AUTO.':
-  !S.apuA?'Switch APU MASTER on, then press APU START and wait for AVAIL.':
-  !S.ok?'Set ADIRS IR 1, 2 and 3 to NAV and wait for alignment to finish.':
-  !S.sqOk?'Read the takeoff card, enter the squawk code on the keypad and press ENT.':
-  S.flaps!==S.tgt?'Set the flaps to the position on the takeoff card.':
-  !S.beacon?'Turn the BEACON light on.':
-  !(S.run[0]&&S.run[1])?'Set ENG MODE to IGN/START, then switch ENG MASTER 1 and 2 on.':
-  S.mode?'Put ENG MODE back to NORM.':
-  'Press T.O. CONFIG to run the takeoff configuration test.')};
-$('#card').onclick=()=>{go();$('#cf').textContent=S.tgt;$('#cs').textContent=S.code;$('#cardm').classList.add('show')};
-$('#cclose').onclick=()=>$('#cardm').classList.remove('show');
-$('#start').onclick=()=>$('#intro').classList.remove('show');
-$('#again').onclick=init;
-$('#restart').onclick=init;
-init();
-</script>
-</body>
-</html>
+## License
+Free to use and modify.
