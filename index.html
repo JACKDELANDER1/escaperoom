@@ -1,37 +1,302 @@
-# Bonnie Blue's Mansion Escape (VR)
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A321 Cockpit Escape — WebXR</title>
+<style>
+  html,body{margin:0;height:100%;background:#04060a;overflow:hidden;font-family:'Courier New',monospace;}
+  canvas{display:block;}
+  #overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    color:#d7e6ff;text-align:center;background:radial-gradient(ellipse at center,#10151c 0%,#04060a 100%);z-index:10;padding:0 20px;}
+  #overlay h1{font-size:1.5rem;letter-spacing:.05em;color:#ffb020;margin:0 0 .5rem;}
+  #overlay p{max-width:440px;line-height:1.55;font-size:.85rem;color:#93a9bd;}
+  #startBtn{margin-top:1.3rem;padding:.8rem 1.7rem;background:#1b1e22;border:2px solid #ffb020;color:#ffb020;
+    font-family:inherit;font-size:.9rem;letter-spacing:.1em;cursor:pointer;}
+  #startBtn:hover{background:#ffb020;color:#1b1e22;}
+  #hint{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);color:#4d6478;font-size:.72rem;z-index:9;text-align:center;}
+</style>
+</head>
+<body>
+<div id="overlay">
+  <h1>AIRBUS A321 — READY FOR TAKEOFF</h1>
+  <p>Bring the flight deck through its real startup flow — batteries, APU, engine start, takeoff flaps, brake release —
+     in the correct order. Configure the aircraft for takeoff and the cockpit door unlocks. That's how you escape.</p>
+  <button id="startBtn">ENTER COCKPIT</button>
+</div>
+<div id="hint">Desktop: drag to look, click a switch to operate it &nbsp;•&nbsp; Headset: point controller, pull trigger</div>
 
-A short first-person VR horror escape game made in Unity.
+<script type="importmap">
+{"imports":{
+  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-## Goal
-You wake up inside Bonnie Blue's mansion. Collect **3 keys** and reach the front door while being hunted by aggressive male AI enemies.
+/* ---------- core setup ---------- */
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x04060a, 0.05);
+const camera = new THREE.PerspectiveCamera(62, innerWidth/innerHeight, 0.05, 100);
+camera.position.set(0,1.25,0.55);
+camera.rotation.order='YXZ';
 
-## Features
-- Full VR movement (XR Interaction Toolkit)
-- NavMesh AI hunters that chase and attack on sight
-- Key collection system
-- Win / Lose conditions
-- Everything in a **single C# file** for easy setup
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
 
-## Requirements
-- Unity 2022.3 LTS or newer
-- XR Interaction Toolkit
-- Any OpenXR headset (Meta Quest, Valve Index, etc.)
+scene.add(new THREE.HemisphereLight(0x2b3a4a,0x05070a,0.55));
+const amberGlow=new THREE.PointLight(0xffb020,1.3,3); amberGlow.position.set(0,1.95,-0.4); scene.add(amberGlow);
+const blueFill=new THREE.PointLight(0x3a6ea5,0.5,4); blueFill.position.set(0,1.4,0.9); scene.add(blueFill);
+const consoleGlow=new THREE.PointLight(0x2be07a,0.6,1.6); consoleGlow.position.set(0,1.1,-0.2); scene.add(consoleGlow);
 
-## Quick Setup
-1. Create a new Unity 3D (URP) project
-2. Install **XR Interaction Toolkit** via Package Manager
-3. Create an empty GameObject → add the `BonnieBlueMansionEscape` component
-4. Set up XR Origin as the Player (add `VRPlayerController` + `PlayerHealth` + CharacterController + tag it **"Player"**)
-5. Create hunters → add `NavMeshAgent` + `HunterAI`
-6. Create keys → add XR Grab Interactable and link the Select Entered event to `KeyPickup.OnSelectEntered`
-7. Create the exit door → add `ExitDoor` component
-8. Bake a NavMesh on the floor
-9. Assign the Exit Door and UI screens in the GameManager
+/* ---------- canvas texture helper ---------- */
+function canvasTex(draw,w=512,h=512){
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  draw(c.getContext('2d'),w,h);
+  const t=new THREE.CanvasTexture(c); t.needsUpdate=true; return t;
+}
+function plaqueTex(label){
+  return canvasTex((ctx,w,h)=>{
+    ctx.fillStyle='#0e1013'; ctx.fillRect(0,0,w,h);
+    ctx.fillStyle='#e8eef4'; ctx.font='bold 40px monospace'; ctx.textAlign='center';
+    ctx.fillText(label,w/2,h/2+14);
+  },220,80);
+}
 
-## Controls
-- Left stick → Move
-- Sprint button (configurable)
-- Grip / Trigger → Grab keys
+/* ---------- materials ---------- */
+const matWall=new THREE.MeshStandardMaterial({color:0x1b1e22,roughness:.85});
+const matPanel=new THREE.MeshStandardMaterial({color:0x14171b,roughness:.55,metalness:.3});
+const matTrim=new THREE.MeshStandardMaterial({color:0x2a2f36,roughness:.5,metalness:.45});
 
-## License
-Free to use and modify.
+/* ---------- room shell (5 planes, seen from inside) ---------- */
+const cockpit=new THREE.Group(); scene.add(cockpit);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(2.2,3),matWall); floor.rotation.x=-Math.PI/2; floor.position.set(0,0,0.2);
+const ceil=new THREE.Mesh(new THREE.PlaneGeometry(2.2,3),matWall); ceil.rotation.x=Math.PI/2; ceil.position.set(0,2.3,0.2);
+const wallL=new THREE.Mesh(new THREE.PlaneGeometry(3,2.3),matWall); wallL.rotation.y=Math.PI/2; wallL.position.set(-1.1,1.15,0.2);
+const wallR=new THREE.Mesh(new THREE.PlaneGeometry(3,2.3),matWall); wallR.rotation.y=-Math.PI/2; wallR.position.set(1.1,1.15,0.2);
+const wallF=new THREE.Mesh(new THREE.PlaneGeometry(2.2,2.3),matWall); wallF.position.set(0,1.15,-1.3);
+const rearL=new THREE.Mesh(new THREE.PlaneGeometry(0.65,2.3),matWall); rearL.rotation.y=Math.PI; rearL.position.set(-0.775,1.15,1.68);
+const rearR=new THREE.Mesh(new THREE.PlaneGeometry(0.65,2.3),matWall); rearR.rotation.y=Math.PI; rearR.position.set(0.775,1.15,1.68);
+cockpit.add(floor,ceil,wallL,wallR,wallF,rearL,rearR);
+
+/* windshield */
+const skyTex=canvasTex((ctx,w,h)=>{
+  const g=ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'#0a1420'); g.addColorStop(.55,'#1c3450'); g.addColorStop(.58,'#2b5f7a'); g.addColorStop(1,'#0a1116');
+  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+  ctx.fillStyle='rgba(255,255,255,.7)';
+  for(let i=0;i<90;i++) ctx.fillRect(Math.random()*w,Math.random()*h*0.45,1.3,1.3);
+});
+const windshield=new THREE.Mesh(new THREE.PlaneGeometry(1.9,0.85),new THREE.MeshBasicMaterial({map:skyTex}));
+windshield.position.set(0,1.85,-1.28); cockpit.add(windshield);
+
+/* main panel + PFD/ND */
+function pfdTex(label){
+  return canvasTex((ctx,w,h)=>{
+    ctx.fillStyle='#020604'; ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle='#173'; ctx.lineWidth=6; ctx.strokeRect(10,10,w-20,h-20);
+    ctx.fillStyle='#0b3'; ctx.font='bold 26px monospace'; ctx.fillText(label,20,40);
+    ctx.strokeStyle='#0e5'; ctx.beginPath(); ctx.arc(w/2,h/2,w*0.32,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle='#f5a623'; ctx.fillRect(w/2-2,20,4,h-40);
+  },256,256);
+}
+const mainPanel=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.5,0.22),matPanel); mainPanel.position.set(0,1.35,-0.85); cockpit.add(mainPanel);
+const pfd=new THREE.Mesh(new THREE.PlaneGeometry(.32,.32),new THREE.MeshBasicMaterial({map:pfdTex('PFD')}));
+pfd.position.set(-0.35,1.36,-0.735); cockpit.add(pfd);
+const nd=new THREE.Mesh(new THREE.PlaneGeometry(.32,.32),new THREE.MeshBasicMaterial({map:pfdTex('ND')}));
+nd.position.set(0.35,1.36,-0.735); cockpit.add(nd);
+
+/* overhead panel + pedestal + seats */
+const overhead=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.45,0.28),matPanel); overhead.position.set(0,2.05,-0.55); overhead.rotation.x=-0.55; cockpit.add(overhead);
+const pedestal=new THREE.Mesh(new THREE.BoxGeometry(0.36,0.55,0.9),matPanel); pedestal.position.set(0,0.75,-0.05); cockpit.add(pedestal);
+[-0.55,0.55].forEach(x=>{
+  const seat=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.5,0.42),matTrim); seat.position.set(x,0.45,0.4); cockpit.add(seat);
+  const back=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.55,0.1),matTrim); back.position.set(x,0.85,0.6); cockpit.add(back);
+});
+
+/* ---------- ECAM status display ---------- */
+const SEQUENCE=[
+  {id:'bat1',label:'BATTERY 1'},
+  {id:'bat2',label:'BATTERY 2'},
+  {id:'apuMaster',label:'APU MASTER SW'},
+  {id:'apuStart',label:'APU START',gate:2200,gateMsg:'APU SPOOLING...'},
+  {id:'apuBleed',label:'APU BLEED'},
+  {id:'engMode',label:'ENG MODE SEL - IGN/START'},
+  {id:'eng1',label:'ENG 1 MASTER'},
+  {id:'eng2',label:'ENG 2 MASTER',gate:3600,gateMsg:'ENGINES SPOOLING...'},
+  {id:'flaps',label:'FLAPS - CONF 1+F'},
+  {id:'brake',label:'PARKING BRAKE OFF'}
+];
+let stepIndex=0, locked=false, ecamMsg='';
+function drawECAM(){
+  return canvasTex((ctx,w,h)=>{
+    ctx.fillStyle='#000'; ctx.fillRect(0,0,w,h);
+    ctx.fillStyle='#0c2'; ctx.font='22px monospace';
+    ctx.fillText('A321 STATUS - TAKEOFF CONFIG',14,30);
+    SEQUENCE.forEach((s,i)=>{
+      const done=i<stepIndex, active=i===stepIndex;
+      ctx.fillStyle = done?'#1e7':active?'#fd0':'#345';
+      ctx.fillText((done?'[x] ':active?'[>] ':'[ ] ')+s.label,14,66+i*26);
+    });
+    ctx.fillStyle='#f55'; ctx.font='18px monospace'; ctx.fillText(ecamMsg,14,h-16);
+  },512,512);
+}
+const ecamMesh=new THREE.Mesh(new THREE.PlaneGeometry(.5,.5),new THREE.MeshBasicMaterial({map:drawECAM()}));
+ecamMesh.position.set(0,0.98,-0.32); ecamMesh.rotation.x=-0.6; cockpit.add(ecamMesh);
+function refreshECAM(){ ecamMesh.material.map.dispose(); ecamMesh.material.map=drawECAM(); ecamMesh.material.needsUpdate=true; }
+
+/* ---------- switches ---------- */
+const switches=[], byId={};
+function makeToggle(x,y,z,tiltX,id,label){
+  const g=new THREE.Group(); g.position.set(x,y,z); g.rotation.x=tiltX;
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(.05,.03,.05),matTrim));
+  const lever=new THREE.Mesh(new THREE.BoxGeometry(.014,.05,.018),new THREE.MeshStandardMaterial({color:0xdddddd,roughness:.4}));
+  lever.geometry.translate(0,.025,0); lever.rotation.x=-0.6; g.add(lever);
+  const light=new THREE.Mesh(new THREE.SphereGeometry(.012,8,8),new THREE.MeshStandardMaterial({color:0x551111,emissive:0x551111,emissiveIntensity:1}));
+  light.position.set(0,.06,-.03); g.add(light);
+  const plaque=new THREE.Mesh(new THREE.PlaneGeometry(.1,.036),new THREE.MeshBasicMaterial({map:plaqueTex(label)}));
+  plaque.position.set(0,.1,.02); plaque.rotation.x=-0.3; g.add(plaque);
+  g.userData={id,label,lever,light,state:'off'};
+  cockpit.add(g); switches.push(g); byId[id]=g;
+}
+makeToggle(-0.32,2.15,-0.52,-0.55,'bat1','BAT1');
+makeToggle(0.32,2.15,-0.52,-0.55,'bat2','BAT2');
+makeToggle(-0.1,2.03,-0.52,-0.55,'apuMaster','APU MSTR');
+makeToggle(0.1,2.03,-0.52,-0.55,'apuStart','APU START');
+makeToggle(0,1.9,-0.52,-0.55,'apuBleed','APU BLEED');
+makeToggle(0,1.02,-0.16,0,'engMode','ENG MODE');
+makeToggle(-0.14,0.98,0.1,0,'eng1','ENG 1');
+makeToggle(0.14,0.98,0.1,0,'eng2','ENG 2');
+makeToggle(0.15,1.02,0.32,0,'flaps','FLAPS');
+makeToggle(-0.15,0.62,0.42,0,'brake','P.BRAKE');
+
+/* ---------- door ---------- */
+const doorGroup=new THREE.Group(); doorGroup.position.set(-0.45,1.1,1.67); cockpit.add(doorGroup);
+const doorMesh=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.9,0.05),matWall); doorMesh.position.set(0.45,0,0); doorGroup.add(doorMesh);
+const escapeTex=canvasTex((ctx,w,h)=>{
+  ctx.fillStyle='#04140a'; ctx.fillRect(0,0,w,h);
+  ctx.fillStyle='#5cf176'; ctx.font='bold 60px monospace'; ctx.textAlign='center'; ctx.fillText('ESCAPED',w/2,h/2);
+},512,256);
+const escapePlane=new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.7),new THREE.MeshBasicMaterial({map:escapeTex,transparent:true,opacity:0}));
+escapePlane.position.set(0,1.2,2.3); scene.add(escapePlane);
+
+/* ---------- audio ---------- */
+const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+function beep(freq,dur,type='sine'){
+  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+  o.type=type; o.frequency.value=freq; o.connect(g); g.connect(audioCtx.destination);
+  const t=audioCtx.currentTime;
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.25,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.start(t); o.stop(t+dur+0.02);
+}
+
+/* ---------- gameplay logic ---------- */
+const tweens=[];
+function easeOut(t){ return 1-Math.pow(1-t,3); }
+function findGroup(o){ while(o && !o.userData.id) o=o.parent; return o; }
+function handleHit(o){
+  const g=findGroup(o); if(!g||locked) return;
+  const target=SEQUENCE[stepIndex];
+  if(g.userData.id!==target.id){ wrongFeedback(g); return; }
+  activate(g,target);
+}
+function activate(g,step){
+  g.userData.state='on';
+  tweens.push({obj:g.userData.lever,axis:'x',from:g.userData.lever.rotation.x,to:0.5,start:performance.now(),dur:220});
+  g.userData.light.material.color.set(0x22ff66); g.userData.light.material.emissive.set(0x22ff66); g.userData.light.material.emissiveIntensity=1;
+  beep(760,.08);
+  if(step.gate){
+    locked=true; ecamMsg=step.gateMsg; refreshECAM();
+    setTimeout(()=>{ locked=false; stepIndex++; ecamMsg=''; refreshECAM(); afterStep(); },step.gate);
+  } else { stepIndex++; refreshECAM(); afterStep(); }
+}
+function afterStep(){ if(stepIndex>=SEQUENCE.length) winSequence(); }
+function wrongFeedback(g){
+  beep(140,.25,'square'); ecamMsg='STEP OUT OF SEQUENCE'; refreshECAM();
+  const orig=g.userData.light.material.color.getHex();
+  g.userData.light.material.color.set(0xff2222);
+  setTimeout(()=>{ g.userData.light.material.color.setHex(orig); ecamMsg=''; refreshECAM(); },500);
+}
+function winSequence(){
+  ecamMsg='TAKEOFF CONFIG NORMAL - DOOR UNLOCKED'; refreshECAM();
+  beep(660,.12); setTimeout(()=>beep(880,.12),140); setTimeout(()=>beep(1100,.2),280);
+  setTimeout(()=>{ tweens.push({obj:doorGroup,axis:'y',from:0,to:-1.7,start:performance.now(),dur:2200}); },1400);
+  setTimeout(()=>{
+    tweens.push({obj:escapePlane,prop:'opacity',from:0,to:1,start:performance.now(),dur:1200});
+    document.getElementById('overlay').innerHTML='<h1>YOU ESCAPED</h1><p>Aircraft configured. Cockpit door open. Flight deck secured.</p>';
+    document.getElementById('overlay').style.display='flex';
+  },3600);
+}
+
+/* ---------- interaction: desktop mouse ---------- */
+const raycaster=new THREE.Raycaster(), pointer=new THREE.Vector2();
+let dragging=false,lastX=0,lastY=0,startX=0,startY=0,yaw=0,pitch=0;
+renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;lastX=startX=e.clientX;lastY=startY=e.clientY;});
+addEventListener('pointerup',e=>{
+  dragging=false;
+  if(Math.hypot(e.clientX-startX,e.clientY-startY)<6 && !renderer.xr.isPresenting){
+    pointer.x=(e.clientX/innerWidth)*2-1; pointer.y=-(e.clientY/innerHeight)*2+1;
+    raycaster.setFromCamera(pointer,camera);
+    const hits=raycaster.intersectObjects(switches,true);
+    if(hits.length) handleHit(hits[0].object);
+  }
+});
+addEventListener('pointermove',e=>{
+  if(!dragging||renderer.xr.isPresenting) return;
+  const dx=e.clientX-lastX, dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+  yaw-=dx*0.0035; pitch=Math.max(-1,Math.min(1,pitch-dy*0.0035));
+  camera.rotation.set(pitch,yaw,0);
+});
+
+/* ---------- interaction: VR controllers ---------- */
+function buildRay(){
+  const geo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,-1)]);
+  return new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xffb020}));
+}
+[0,1].forEach(i=>{
+  const c=renderer.xr.getController(i);
+  c.add(buildRay());
+  c.addEventListener('selectstart',()=>{
+    const m=new THREE.Matrix4().extractRotation(c.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
+    raycaster.ray.direction.set(0,0,-1).applyMatrix4(m);
+    const hits=raycaster.intersectObjects(switches,true);
+    if(hits.length) handleHit(hits[0].object);
+  });
+  scene.add(c);
+});
+
+/* ---------- render loop ---------- */
+function updateTweens(now){
+  for(let i=tweens.length-1;i>=0;i--){
+    const tw=tweens[i]; const t=Math.min(1,(now-tw.start)/tw.dur); const v=tw.from+(tw.to-tw.from)*easeOut(t);
+    if(tw.prop==='opacity') tw.obj.material.opacity=v; else tw.obj.rotation[tw.axis]=v;
+    if(t>=1) tweens.splice(i,1);
+  }
+  const target=SEQUENCE[stepIndex];
+  if(target){
+    const g=byId[target.id];
+    if(g && g.userData.state==='off') g.userData.light.material.emissiveIntensity=1+Math.sin(now*0.006)*0.6;
+  }
+}
+renderer.setAnimationLoop((time)=>{ updateTweens(time); renderer.render(scene,camera); });
+addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+
+renderer.xr.addEventListener('sessionstart',()=>{ document.getElementById('hint').style.display='none'; });
+renderer.xr.addEventListener('sessionend',()=>{ document.getElementById('hint').style.display='block'; });
+
+document.getElementById('startBtn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  if(audioCtx.state==='suspended') audioCtx.resume();
+});
+</script>
+</body>
+</html>
