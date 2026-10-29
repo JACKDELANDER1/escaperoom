@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Escape the Hangar - VR Escape Room (747, A380, A321)</title>
+<!--
+  WebXR escape room. Single file, no build step.
+  Deploy: put this file at the repo root as index.html, enable GitHub Pages (HTTPS is required for WebXR).
+  Headset: open the Pages URL in the Quest/Pico/SteamVR browser and press "Enter VR".
+-->
+<style>
+html,body{margin:0;height:100%;background:#0b1220;color:#e8eefc;font:15px system-ui,sans-serif;overflow:hidden}
+canvas{display:block}
+#hud{position:fixed;top:10px;left:12px;display:flex;gap:16px;padding:6px 12px;background:#0009;border-radius:6px;font-variant-numeric:tabular-nums}
+#lt{color:#ffd166;letter-spacing:.25em}
+#msg{position:fixed;bottom:12%;left:50%;transform:translateX(-50%);padding:8px 16px;background:#000b;border-radius:6px;opacity:0;transition:opacity .3s;white-space:pre;text-align:center}
+#cross{position:fixed;top:50%;left:50%;width:8px;height:8px;margin:-6px;border:2px solid #fffa;border-radius:50%;pointer-events:none}
+#start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#0b1220f2;text-align:center;padding:20px;line-height:1.5}
+#start h1{margin:0;font-size:2.3rem;letter-spacing:.01em}
+#go{padding:12px 28px;font-size:1.05rem;border:0;border-radius:6px;background:#ffb020;color:#1a1204;cursor:pointer;font-weight:700}
+#go:focus-visible{outline:3px solid #fff;outline-offset:3px}
+[hidden]{display:none!important}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="hud" hidden><b id="lv"></b><span id="tm">0:00</span><span id="lt"></span></div>
+<div id="cross" hidden></div>
+<div id="msg"></div>
+<div id="start">
+  <h1>Escape the Hangar</h1>
+  <p id="res">Five levels. Boeing 747, Airbus A380 and an A321 flight deck.<br>
+  Desktop: WASD + mouse, click or E to interact, H for a hint.<br>
+  VR: trigger interacts, grip teleports, left stick moves, right stick turns.</p>
+  <button id="go">Play on desktop</button>
+  <p>Have a headset? Press Enter VR below instead.</p>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import {VRButton} from 'three/addons/webxr/VRButton.js';
+
+const $ = s => document.querySelector(s);
+const fmt = s => Math.floor(s/60) + ':' + String(Math.floor(s%60)).padStart(2,'0');
+
+// ---------- Renderer / rig ----------
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b1220);
+const cam = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, .05, 200);
+const rig = new THREE.Group();           // move this, not the camera (VR needs it)
+rig.add(cam); scene.add(rig); cam.position.y = 1.6;
+addEventListener('resize', () => {cam.aspect = innerWidth/innerHeight; cam.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight)});
+
+// ---------- Helpers ----------
+let ac;
+const beep = (f=600, d=.12) => {try{ac ??= new AudioContext(); const o=ac.createOscillator(), g=ac.createGain(); o.frequency.value=f; g.gain.value=.07; o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime+d)}catch{}};
+let toast; const say = t => {const m=$('#msg'); m.textContent=t; m.style.opacity=1; clearTimeout(toast); toast=setTimeout(()=>m.style.opacity=0,2800)};
+
+function label(text,w,h,{bg='#0d1b2a',fg='#9fe8ff',size=36}={}){
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const g=c.getContext('2d'); g.fillStyle=bg; g.fillRect(0,0,w,h);
+  g.strokeStyle=fg; g.globalAlpha=.4; g.lineWidth=4; g.strokeRect(4,4,w-8,h-8); g.globalAlpha=1;
+  g.fillStyle=fg; g.font=`bold ${size}px monospace`; g.textAlign='center'; g.textBaseline='middle';
+  const L=text.split('\n'); L.forEach((t,i)=>g.fillText(t,w/2,h/2+(i-(L.length-1)/2)*size*1.25));
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+const signTex=(t,ar,o)=>label(t,640,Math.round(640*ar),o);
+const dialTex = (c=>s=>c[s]??=label(s,128,160,{bg:'#16202e',fg:'#ffd166',size:96}))({});
+
+// ---------- Aircraft (procedural; nose points +X) ----------
+const wingGeo=(sx,sz)=>{
+  const s=new THREE.Shape(); s.moveTo(.5,0); s.lineTo(-.5,1.9); s.lineTo(-.8,1.9); s.lineTo(-.5,0); s.closePath();
+  const g=new THREE.ExtrudeGeometry(s,{depth:.06,bevelEnabled:false}); g.rotateX(-Math.PI/2); g.scale(sx,1,sz); return g;
+};
+function makePlane(type, scale=1){
+  const kind={747:'b747',a380:'a380',a321:'a321'}[type]||type, big=kind==='a380', g=new THREE.Group();
+  const M=(c,o={})=>new THREE.MeshStandardMaterial({color:c,roughness:.5,metalness:.2,...o});
+  const white=M(0xeef1f5), livery=M(big?0x1d4ea8:0x0a7d44), dark=M(0x14202e), steel=M(0x9aa3ad,{metalness:.7});
+  const r=big?.4:.33, hh=big?.46:.33;                     // A380 fuselage is taller: two full decks
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(r,3.2,8,24),white);
+  body.rotation.z=Math.PI/2; if(big) body.scale.x=1.15; g.add(body);
+  if(kind==='b747'){                                      // the 747's upper-deck hump
+    const h=new THREE.Mesh(new THREE.SphereGeometry(.3,16,12),white); h.scale.set(2.4,.8,.9); h.position.set(1,.36,0); g.add(h);
+  }
+  for(let i=0;i<14;i++) for(const sd of[-1,1]) for(const row of big?[.12,.34]:[.1]){
+    const w=new THREE.Mesh(new THREE.BoxGeometry(.07,.05,.02),dark);
+    w.position.set(-1.1+i*.17,row,sd*(r*Math.sqrt(1-(row/hh)**2)+.005)); g.add(w);
+  }
+  const span=big?1.3:1;
+  for(const sd of[1,-1]){
+    const w=new THREE.Mesh(wingGeo(1,span),white); w.position.set(.1,-.1,0); w.scale.z=sd; g.add(w);
+    for(const k of (kind==='a321'?[.8]:[.65,1.2])){      // 4 engines on 747/A380, 2 on the A321
+      const e=new THREE.Mesh(new THREE.CylinderGeometry(.11,.09,.4,14),steel);
+      e.rotation.z=Math.PI/2; e.position.set(.6-.526*k*span,-.28,sd*k*span); g.add(e);
+    }
+    const st=new THREE.Mesh(wingGeo(.45,.5),white); st.position.set(-1.45,.1,0); st.scale.z=sd; g.add(st);
+  }
+  const f=new THREE.Shape(); f.moveTo(-1.3,.2); f.lineTo(-1.85,1); f.lineTo(-2.05,1); f.lineTo(-1.95,.2); f.closePath();
+  const fin=new THREE.Mesh(new THREE.ExtrudeGeometry(f,{depth:.05,bevelEnabled:false}),livery); fin.position.z=-.025; g.add(fin);
+  g.scale.setScalar(scale); return g;
+}
+
+// ---------- Game state ----------
+let room, L, cur=-1, hot=[], ticks=[], floor, shellMesh, doorObj, board;
+let letters=[], hintIdx=0, hintsUsed=0, started=false, won=false, t0=0, locked=false;
+
+const add=(o,x=0,y=0,z=0)=>{o.position.set(x,y,z); room.add(o); return o};
+const box=(w,h,d,c,x,y,z,m={})=>add(new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color:c,roughness:.7,...m})),x,y,z);
+const sign=(t,w,h,x,y,z,ry=0,o)=>{
+  const p=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:signTex(t,h/w,o)}));
+  p.userData={ar:h/w,o}; p.rotation.y=ry; return add(p,x,y,z);
+};
+const setSign=(p,t,o)=>{p.material.map=signTex(t,p.userData.ar,o??p.userData.o); p.material.needsUpdate=true};
+const grp=(x,y,z,ry)=>{const g=new THREE.Group(); g.rotation.y=ry; return add(g,x,y,z)};
+const button=(x,y,z,c,fn)=>{const b=box(.12,.3,.3,c,x,y,z,{emissive:c,emissiveIntensity:.5}); hot.push({mesh:b,use:fn}); return b};
+
+// Dial lock: click a dial to advance its symbol; opens when every dial matches `code`.
+function codeLock(code,syms,x,y,z,ry,title){
+  const g=grp(x,y,z,ry), idx=[...code].map(()=>0), n=code.length;
+  box(.3*n+.1,.5,.06,0x222b38,x,y,z-.05).rotation.y=ry;
+  sign(title,.3*n+.1,.18,x,y+.38,z+.01,ry);
+  [...code].forEach((_,i)=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(.24,.34,.08),new THREE.MeshBasicMaterial({map:dialTex(syms[0])}));
+    m.position.x=(i-(n-1)/2)*.3; g.add(m);
+    hot.push({mesh:m,use(){
+      if(locked) return;
+      idx[i]=(idx[i]+1)%syms.length; m.material.map=dialTex(syms[idx[i]]); beep(450+idx[i]*35);
+      if(idx.every((v,k)=>syms[v]===code[k])){locked=true; solve()}
+    }});
+  });
+}
+// Row of switches; onAll fires once every switch is ON.
+function toggles(n,x,y,z,ry,onAll){
+  const g=grp(x,y,z,ry), on=Array(n).fill(false);
+  for(let i=0;i<n;i++){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(.2,.28,.08),new THREE.MeshStandardMaterial({color:0xb02a2a,emissive:0xb02a2a,emissiveIntensity:.6}));
+    m.position.x=(i-(n-1)/2)*.38; g.add(m);
+    hot.push({mesh:m,use(){
+      on[i]=!on[i]; const c=on[i]?0x2ad36b:0xb02a2a; m.material.color.set(c); m.material.emissive.set(c); beep(on[i]?700:400);
+      if(on.every(Boolean)){beep(950,.25); onAll()}
+    }});
+  }
+}
+function makeDoor(){
+  const m=box(1.4,2.2,.1,0x6b7280,0,1.1,-L.d/2+.06,{metalness:.6,roughness:.4});
+  const led=new THREE.Mesh(new THREE.SphereGeometry(.07),new THREE.MeshBasicMaterial({color:0xff3030})); add(led,.9,2,-L.d/2+.1);
+  let open=false; ticks.push(dt=>{if(open&&m.position.y<3.5) m.position.y+=dt*1.5});
+  return {get isOpen(){return open}, open(){open=true; led.material.color.set(0x30ff60)}};
+}
+
+// ---------- Levels ----------
+const DIG=[...'0123456789'], ABC=[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+const LEVELS=[
+{n:'1: Departure Lounge',w:9,d:11,h:3.4,wall:0x1d2b3a,floor:0x2c3e50,letter:'J',
+ intro:'WELCOME TO GATE 1\nFind 3 clues, set the\nlock beside the door.\nClick a dial to turn it.\nAmber button = hint.',
+ hints:['Read the placards on\nboth pedestals and the\nsign above the door.','CODE: 4 2 1\nengines, decks, gate'],
+ build(L){
+   const z=-L.d/2;
+   const P=(t,x)=>{box(1.2,.8,1.2,0x394b5e,x,.4,-1); const p=add(makePlane(t,.7),x,1.15,-1); ticks.push(dt=>p.rotation.y+=dt*.5)};
+   P('747',-2.8); P('a380',2.8);
+   sign('BOEING 747\nENGINES: 4',1.1,.5,-2.8,.45,-.39);
+   sign('AIRBUS A380\nFULL DECKS: 2',1.1,.5,2.8,.45,-.39);
+   sign('GATE 1',1.6,.5,0,2.8,z+.02);
+   codeLock('421',DIG,-2.6,1.5,z+.1,0,'ENGINES  DECKS  GATE');
+ }},
+{n:'2: 747 Freighter',w:8,d:12,h:3.2,wall:0x2a2a24,floor:0x3a3326,dim:true,letter:'U',
+ intro:'LEVEL 2: 747 FREIGHTER\nA clue is hidden\nbehind a crate.\nCan you move it?',
+ hints:['Click the big crate\nnear the right wall.','CODE: 1 9 6 9\nthe 747 first flight'],
+ build(L){
+   const z=-L.d/2; let slide=0;
+   sign('FIRST FLIGHT\n1969',1.5,.75,2.4,1.1,z+.02,0,{bg:'#3a2e1d',fg:'#e8c26a'});
+   const big=box(1.7,1.7,1,0x8a6a3b,2.4,.85,z+.9);
+   hot.push({mesh:big,use(){slide=1; say('The crate slides aside...'); beep(300,.3)}});
+   ticks.push(dt=>{if(slide&&big.position.x<4.2) big.position.x+=dt*1.2});
+   [[-2.4,-1],[-1.2,2],[2,1],[-2.6,3]].forEach(([x,zz])=>box(1,1,1,0x7a5c33,x,.5,zz));
+   const p=add(makePlane('747',.5),-1.2,1.35,2); ticks.push(dt=>p.rotation.y+=dt*.6);
+   sign('BOEING 747 FREIGHTER\nQueen of the Skies',2.2,1,-3.98,1.8,-1,Math.PI/2);
+   codeLock('1969',DIG,-2.4,1.5,z+.1,0,'FIRST FLIGHT');
+ }},
+{n:'3: A380 Upper Deck',w:6,d:14,h:3,wall:0xdfe6ee,floor:0xb0b8c4,letter:'M',
+ intro:'LEVEL 3: A380 UPPER DECK\nSwitch on the reading\nlights to wake the\ncabin screen.',
+ hints:['Left wall: 3 switches.\nAll must be ON.','CODE: 2 0 0 7\nfirst passenger service'],
+ build(L){
+   const z=-L.d/2;
+   for(let r=0;r<8;r++){const zz=3-r*1.1; for(const x of[-2.2,-1.5,1.5,2.2]){box(.55,.45,.55,0x2f5fa8,x,.3,zz); box(.55,.8,.12,0x2f5fa8,x,.85,zz-.25)}
+     for(const sd of[-1,1]) box(.05,.4,.3,0x8fc4ff,sd*2.97,1.5,zz,{emissive:0x4a90d9,emissiveIntensity:.6})}
+   const screen=sign('SCREEN OFFLINE\nTurn the lights on',2.6,1.3,-2,1.9,z+.02,0,{fg:'#ff6b6b'});
+   sign('READING LIGHTS',1.4,.3,-2.96,2.1,-3.3,Math.PI/2);
+   toggles(3,-2.94,1.5,-3.3,Math.PI/2,()=>setSign(screen,'FIRST SERVICE 2007\nSingapore Airlines\nAirbus A380',{fg:'#7dffb0'}));
+   const p=add(makePlane('a380',.4),0,2.5,-1); ticks.push(dt=>p.rotation.y+=dt*.6);
+   codeLock('2007',DIG,2,1.5,z+.1,0,'FIRST SERVICE');
+ }},
+{n:'4: A321 Flight Deck',w:5,d:6,h:2.6,wall:0x20262e,floor:0x15181d,letter:'B',
+ intro:'LEVEL 4: A321 COCKPIT\nPower her up: BAT, APU,\nENG 1 and ENG 2.\nThen read the display.',
+ hints:['Left wall: flip all 4\nswitches to ON.','CODE: 3 5 0\ncruise level FL350'],
+ build(L){
+   const x=-L.w/2+.02;
+   const screen=sign('DISPLAY OFF\nPower the aircraft',2,1,x,1.9,0,Math.PI/2,{fg:'#ff6b6b'});
+   sign('BAT  APU  ENG1  ENG2',1.8,.25,x,1.5,0,Math.PI/2);
+   toggles(4,x+.02,1.15,0,Math.PI/2,()=>setSign(screen,'READY FOR TAKEOFF\nCRUISE: FL350',{fg:'#7dffb0'}));
+   for(const sx of[-.9,.9]){box(.5,.5,.5,0x353c46,sx,.25,.8); box(.5,.8,.12,0x353c46,sx,.85,1.1)}
+   const p=add(makePlane('a321',.35),0,2.2,-.5); ticks.push(dt=>p.rotation.y+=dt*.6);
+   codeLock('350',DIG,L.w/2-.1,1.5,-1.6,-Math.PI/2,'CRUISE LEVEL');
+ }},
+{n:'5: The Hangar',w:18,d:16,h:7,wall:0x151a22,floor:0x242a33,bright:true,
+ build(L){
+   const z=-L.d/2, fly=[];
+   [['747',-5,1.7],['a380',4.8,1.7]].forEach(([t,x,s])=>{
+     const p=add(makePlane(t,s),x,2.1,-1); p.rotation.y=Math.PI/2; box(.25,1.5,.25,0x444c58,x,.75,-1); fly.push(p)});
+   ticks.push(dt=>{if(won) fly.forEach(p=>{p.userData.v=(p.userData.v||0)+dt*3; p.position.z-=p.userData.v*dt*4; p.position.y+=p.userData.v*dt*1.2})});
+   sign('747 and A380\nEngines: 4 + 4',2.4,.9,0,1.2,5.5);
+   codeLock('JUMBO',ABC,0,1.6,z+.1,0,'5 LETTERS');
+ }},
+];
+LEVELS[4].name='5: The Hangar';
+LEVELS[4].intro='FINAL: THE HANGAR\nNickname of the 747:\n_ _ _ _ _  JET\nLetters found: ';
+LEVELS[4].hints=['Think of the 747\'s\nother name: it is huge.','Letters so far spell\nJUMB... the last is O'];
+
+function load(i){
+  if(room){scene.remove(room); room.traverse(o=>{o.geometry?.dispose(); if(o.material&&!o.material.map) o.material.dispose()})}
+  room=new THREE.Group(); scene.add(room); hot=[]; ticks=[]; cur=i; L=LEVELS[i]; hintIdx=0; locked=false;
+  scene.background=new THREE.Color(0x0b1220);
+  shellMesh=add(new THREE.Mesh(new THREE.BoxGeometry(L.w,L.h,L.d),new THREE.MeshStandardMaterial({color:L.wall,side:THREE.BackSide,roughness:.9})),0,L.h/2,0);
+  floor=new THREE.Mesh(new THREE.PlaneGeometry(L.w,L.d),new THREE.MeshStandardMaterial({color:L.floor,roughness:.6}));
+  floor.rotation.x=-Math.PI/2; add(floor,0,.01,0);
+  room.add(new THREE.HemisphereLight(0xcfe8ff,0x223344,L.dim?.35:L.bright?1.1:.9));
+  const pl=new THREE.PointLight(L.dim?0xffc080:0xffffff,L.dim?18:12,L.d*1.5); add(pl,0,L.h-.4,0);
+  doorObj=makeDoor();
+  const bz=L.d/2-3, bx=L.w/2-.03;
+  board=sign(L.intro+(i===4?letters.join(' '):''),2.6,1.3,bx,1.9,bz,-Math.PI/2);
+  button(L.w/2-.08,1,bz,0xffb020,hint);
+  L.build(L);
+  rig.position.set(0,0,L.d/2-1.5); rig.rotation.y=0; yaw=0;
+  $('#lv').textContent='Level '+L.n; say('Level '+L.n);
+}
+function hint(){
+  hintsUsed++; setSign(board,L.hints[Math.min(hintIdx,L.hints.length-1)]); hintIdx++; beep(520,.15);
+}
+function solve(){
+  beep(880,.35); doorObj.open();
+  if(L.letter){letters.push(L.letter); $('#lt').textContent=letters.join(' ')}
+  if(cur<4) setSign(board,'DOOR UNLOCKED!\nLetter found: '+L.letter+'\nWalk through the door.');
+  else win();
+}
+function win(){
+  won=true; shellMesh.visible=false; scene.background=new THREE.Color(0x5aa9ff);
+  const t=fmt((performance.now()-t0)/1000);
+  setSign(board,'YOU ESCAPED!\nTime '+t+'\nHints used: '+hintsUsed);
+  say('You escaped in '+t); setTimeout(()=>{$('#res').innerHTML='You escaped in '+t+' with '+hintsUsed+' hint(s).<br>Both jets are airborne.'; $('#go').textContent='Play again'; $('#start').hidden=false; document.exitPointerLock?.()},9000);
+}
+
+// ---------- Input: desktop ----------
+const keys={}; let yaw=0, pit=0;
+const ray=new THREE.Raycaster(); ray.far=6;
+const V=new THREE.Vector3(), Q=new THREE.Quaternion();
+const pick=(o,d)=>{ray.set(o,d); const h=ray.intersectObjects(hot.map(x=>x.mesh),false)[0]; return h&&hot.find(x=>x.mesh===h.object)};
+const deskPick=()=>{const o=cam.getWorldPosition(new THREE.Vector3()), d=cam.getWorldDirection(new THREE.Vector3()); return pick(o,d)};
+addEventListener('keydown',e=>{keys[e.code]=1; if(!started||won) return; if(e.code==='KeyE') deskPick()?.use(); if(e.code==='KeyH') hint()});
+addEventListener('keyup',e=>keys[e.code]=0);
+const cv=renderer.domElement;
+cv.addEventListener('click',()=>{if(!started||renderer.xr.isPresenting) return; if(document.pointerLockElement!==cv) cv.requestPointerLock(); else deskPick()?.use()});
+document.addEventListener('mousemove',e=>{
+  if(document.pointerLockElement!==cv) return;
+  yaw-=e.movementX*.0022; pit=Math.max(-1.4,Math.min(1.4,pit-e.movementY*.0022)); rig.rotation.y=yaw; cam.rotation.x=pit;
+});
+let prev;
+function hover(){ // desktop highlight
+  const h=renderer.xr.isPresenting?null:deskPick(); if(prev&&prev!==h) prev.mesh.scale.setScalar(1);
+  if(h) h.mesh.scale.setScalar(1.1); prev=h;
+}
+
+// ---------- Input: VR controllers ----------
+function teleport(c){
+  const o=c.getWorldPosition(new THREE.Vector3()), d=new THREE.Vector3(0,0,-1).applyMatrix4(new THREE.Matrix4().extractRotation(c.matrixWorld));
+  ray.far=12; ray.set(o,d); const h=ray.intersectObject(floor)[0]; ray.far=6; if(!h) return;
+  cam.getWorldPosition(V); rig.position.x+=h.point.x-V.x; rig.position.z+=h.point.z-V.z;
+}
+for(let i=0;i<2;i++){
+  const c=renderer.xr.getController(i); rig.add(c);
+  c.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-3)]),new THREE.LineBasicMaterial({color:0x66e0ff})));
+  c.addEventListener('selectstart',()=>{
+    if(!started||won) return;
+    const o=c.getWorldPosition(new THREE.Vector3()), d=new THREE.Vector3(0,0,-1).applyMatrix4(new THREE.Matrix4().extractRotation(c.matrixWorld));
+    pick(o,d)?.use();
+  });
+  c.addEventListener('squeezestart',()=>{if(started&&!won) teleport(c)});
+}
+
+// ---------- Movement / loop ----------
+let snapCd=0;
+function move(dt){
+  let f=0,r=0,hy=yaw;
+  if(renderer.xr.isPresenting){
+    hy=new THREE.Euler().setFromQuaternion(cam.getWorldQuaternion(Q),'YXZ').y; snapCd-=dt;
+    for(const s of renderer.xr.getSession().inputSources){
+      const a=s.gamepad?.axes; if(!a) continue; const x=a[2]??a[0], y=a[3]??a[1];
+      if(s.handedness==='left'){ if(Math.abs(y)>.15) f=-y; if(Math.abs(x)>.15) r=x }
+      else if(Math.abs(x)>.7&&snapCd<=0){rig.rotation.y-=Math.sign(x)*Math.PI/6; snapCd=.35}
+    }
+  } else {f=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0); r=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0)}
+  if(f||r){
+    const v=2.2*dt; rig.position.x+=(-Math.sin(hy)*f+Math.cos(hy)*r)*v; rig.position.z+=(-Math.cos(hy)*f-Math.sin(hy)*r)*v;
+    rig.position.x=THREE.MathUtils.clamp(rig.position.x,-L.w/2+.5,L.w/2-.5); rig.position.z=THREE.MathUtils.clamp(rig.position.z,-L.d/2+.5,L.d/2-.5);
+  }
+  cam.getWorldPosition(V);   // walk through the open door to advance
+  if(doorObj.isOpen&&cur<4&&V.z<-L.d/2+1.4&&Math.abs(V.x)<1) load(cur+1);
+}
+const clock=new THREE.Clock();
+renderer.setAnimationLoop(()=>{
+  const dt=Math.min(clock.getDelta(),.05); ticks.forEach(f=>f(dt));
+  if(started&&!won){move(dt); hover(); $('#tm').textContent=fmt((performance.now()-t0)/1000)}
+  renderer.render(scene,cam);
+});
+
+// ---------- Start ----------
+function startGame(){
+  if(started&&!won) return;
+  started=true; won=false; letters=[]; hintsUsed=0; t0=performance.now(); $('#lt').textContent='';
+  $('#start').hidden=true; $('#hud').hidden=false; $('#cross').hidden=false; load(0);
+}
+$('#go').onclick=()=>{startGame(); cv.requestPointerLock?.()};
+renderer.xr.addEventListener('sessionstart',()=>{startGame(); $('#cross').hidden=true});
+renderer.xr.addEventListener('sessionend',()=>{$('#cross').hidden=false});
+</script>
+</body>
+</html>
